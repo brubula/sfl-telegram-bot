@@ -1,0 +1,27 @@
+{
+    "1915353020": {
+        "farm_id": "23270",
+        "last_notified_status": {
+            "beehive_3649dcec_finished": false,
+            "beehive_56a01cd9_finished": false,
+            "beehive_840fcd68_finished": false,
+            "crops_ready": false,
+            "trees_ready": false,
+            "stones_ready": false
+        }
+    },
+    "7017477095": {
+        "farm_id": "6171871999808596",
+        "last_notified_status": {
+            "0_awake": false,
+            "1_awake": false,
+            "2_awake": false,
+            "beehive_0_finished": true,
+            "beehive_1_finished": true,
+            "trees_ready": true,
+            "stones_ready": true,
+            "crops_ready": true
+        }
+    },
+    "_last_update_id": 757105651
+}
