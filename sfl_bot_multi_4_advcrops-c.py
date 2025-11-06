@@ -55,8 +55,11 @@ STONE_RESPAWN_BASE_MS = 4 * 60 * 60 * 1000  # Reaparición de piedras (4h)
 # ------------------------------------------------------------------------------
 # 1.4 Configuración de archivos y logging
 # ------------------------------------------------------------------------------
-USER_DATA_FILE = "sfl_users.json"
-LOG_FILE = "sfl_bot.log"
+# Usar rutas absolutas basadas en la ubicación del script para que el código
+# funcione aunque el working directory cambie o el proyecto se mueva.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USER_DATA_FILE = os.path.join(BASE_DIR, "sfl_users.json")
+LOG_FILE = os.path.join(BASE_DIR, "sfl_bot.log")
 
 # VARIABLE GLOBAL PARA LAST_UPDATE_ID
 LAST_UPDATE_ID = None
