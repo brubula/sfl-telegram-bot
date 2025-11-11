@@ -7,7 +7,14 @@
             "beehive_840fcd68_finished": false,
             "crops_ready": false,
             "trees_ready": false,
-            "stones_ready": false
+            "stones_ready": true,
+            "floating_island_pre_start_1762579200000": true,
+            "floating_island_pre_end_1762581000000": true,
+            "floating_island_pre_start_1762639200000": true,
+            "floating_island_pre_end_1762641000000": true,
+            "floating_island_pre_start_1762725600000": true,
+            "floating_island_pre_end_1762727400000": true,
+            "floating_island_pre_end_1762824600000": true
         }
     },
     "7017477095": {
@@ -20,7 +27,14 @@
             "beehive_1_finished": true,
             "trees_ready": true,
             "stones_ready": true,
-            "crops_ready": true
+            "crops_ready": true,
+            "floating_island_pre_start_1762579200000": true,
+            "floating_island_pre_end_1762581000000": true,
+            "floating_island_pre_start_1762639200000": true,
+            "floating_island_pre_end_1762641000000": true,
+            "floating_island_pre_start_1762725600000": true,
+            "floating_island_pre_end_1762727400000": true,
+            "floating_island_pre_end_1762824600000": true
         }
     },
     "_last_update_id": 757105651

@@ -4,7 +4,9 @@ import time
 import os
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
+
 import logging
+from logging.handlers import RotatingFileHandler
 
 # ==============================================================================
 # SUNFLOWER LAND BOT - MONITOR DE RECURSOS
@@ -52,6 +54,9 @@ PRE_ALERT_MS = 5 * 60 * 1000           # Alerta previa para eventos (5min)
 TREE_GROWTH_BASE_MS = 2 * 60 * 60 * 1000  # Crecimiento de árboles (2h)
 STONE_RESPAWN_BASE_MS = 4 * 60 * 60 * 1000  # Reaparición de piedras (4h)
 
+# Tiempos de Floating Island
+PRE_EVENT_ALERT_MS = 5 * 60 * 1000      # Alerta 5 minutos antes del evento
+
 # ------------------------------------------------------------------------------
 # 1.4 Configuración de archivos y logging
 # ------------------------------------------------------------------------------
@@ -65,16 +70,21 @@ LOG_FILE = os.path.join(BASE_DIR, "sfl_bot.log")
 LAST_UPDATE_ID = None
 
 # Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s: %(message)s',
-    datefmt='%H:%M:%S',
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ]
-)
+
+# Rotating log file: 2MB per file, keep 3 backups, WARNING and above only
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
+formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%H:%M:%S')
+
+file_handler = RotatingFileHandler(LOG_FILE, maxBytes=2*1024*1024, backupCount=3, encoding='utf-8')
+file_handler.setFormatter(formatter)
+file_handler.setLevel(logging.WARNING)
+
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+stream_handler.setLevel(logging.INFO)
+
+logger.handlers = [file_handler, stream_handler]
 
 # ==============================================================================
 # 2. DATOS DE JUEGO Y CONFIGURACIÓN
@@ -292,8 +302,10 @@ def fetch_farm_data(farm_id: str) -> Optional[Dict]:
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        return response.json()
-        logger.info(f"[DEBUG] API Response: {json.dumps(data.get('farm', {}), indent=2)}")
+        data = response.json()
+        logger.info(f"[DEBUG] API Response URL: {url}")
+        logger.info(f"[DEBUG] API Response Headers: {headers}")
+        logger.info(f"[DEBUG] API Response Data: {json.dumps(data, indent=2)}")
         return data
     except requests.exceptions.RequestException as e:
         logger.error(f"Error al obtener datos de Farm ID {farm_id}: {e}")
@@ -505,6 +517,44 @@ def process_trees_alerts(data: Dict, user_info: Dict, current_time_ms: float) ->
     
     return alerts
 
+def process_floating_island_alerts(data: Dict, user_info: Dict, current_time_ms: float) -> List[str]:
+    """Procesa alertas para eventos de Floating Island."""
+    alerts = []
+    last_status = user_info.get('last_notified_status', {})
+    floating_island = data.get("farm", {}).get("floatingIsland", {}).get("schedule", [])
+
+    if not floating_island:
+        return alerts
+
+    for event in floating_island:
+        start_time_ms = event.get("startAt")
+        end_time_ms = event.get("endAt")
+        
+        if not start_time_ms or not end_time_ms:
+            continue
+            
+        # Generar alertas 5 minutos antes del inicio
+        pre_start_key = f"floating_island_pre_start_{start_time_ms}"
+        if (start_time_ms - current_time_ms <= PRE_EVENT_ALERT_MS and 
+            start_time_ms > current_time_ms and 
+            not last_status.get(pre_start_key, False)):
+            
+            start_time = datetime.fromtimestamp(start_time_ms / 1000).strftime('%H:%M')
+            end_time = datetime.fromtimestamp(end_time_ms / 1000).strftime('%H:%M')
+            alerts.append(f"🏝️ ¡Floating Island disponible en 5 minutos! ({start_time} - {end_time})")
+            last_status[pre_start_key] = True
+            
+        # Generar alertas 5 minutos antes del fin
+        pre_end_key = f"floating_island_pre_end_{end_time_ms}"
+        if (end_time_ms - current_time_ms <= PRE_EVENT_ALERT_MS and 
+            end_time_ms > current_time_ms and 
+            not last_status.get(pre_end_key, False)):
+            
+            alerts.append(f"⚠️ ¡Floating Island termina en 5 minutos!")
+            last_status[pre_end_key] = True
+
+    return alerts
+
 def process_crops_alerts(data: Dict, user_info: Dict, current_time_ms: float) -> List[str]:
     """Procesa alertas de cultivos listos para cosechar."""
     plots = data.get("farm", {}).get("crops", {})
@@ -623,6 +673,10 @@ def handle_telegram_commands(user_data: Dict) -> Dict:
         elif text.lower() == '/stones':
             logger.info("Comando /stones detectado")
             handle_stones_command(chat_id, user_data)
+            
+        elif text.lower() == '/globe':
+            logger.info("Comando /globe detectado")
+            handle_globe_command(chat_id, user_data)
         
         # Actualizar LAST_UPDATE_ID después de procesar cada mensaje
         if LAST_UPDATE_ID is None or update_id > LAST_UPDATE_ID:
@@ -799,6 +853,106 @@ def handle_trees_command(chat_id: str, user_data: Dict) -> None:
         logger.info("No se encontró información de tala para ningún árbol")
         send_telegram_message(chat_id, "No hay información de tala disponible.")
 
+def format_floating_island_message(events: List[Dict], current_time_ms: float) -> str:
+    """Formatea el mensaje de Floating Island con un diseño simple."""
+    # Usar texto simple (sin emojis problemáticos) para compatibilidad con Telegram
+    messages = ["*Horarios de Floating Island*\n"]
+    
+    active_events = []
+    future_events = []
+    past_events = []
+
+    # Traducir días de la semana
+    days_es = {
+        'Monday': 'Lunes',
+        'Tuesday': 'Martes',
+        'Wednesday': 'Miércoles',
+        'Thursday': 'Jueves',
+        'Friday': 'Viernes',
+        'Saturday': 'Sábado',
+        'Sunday': 'Domingo'
+    }
+
+    for event in events:
+        start_time_ms = event.get("startAt")
+        end_time_ms = event.get("endAt")
+        
+        if not start_time_ms or not end_time_ms:
+            continue
+
+        start_dt = datetime.fromtimestamp(start_time_ms / 1000)
+        end_dt = datetime.fromtimestamp(end_time_ms / 1000)
+        
+        day_name = start_dt.strftime('%A')
+        date = start_dt.strftime('%d/%m/%Y')
+        start_time = start_dt.strftime('%H:%M')
+        end_time = end_dt.strftime('%H:%M')
+        day_name_es = days_es.get(day_name, day_name)
+
+        event_info = {
+            'day': day_name_es,
+            'date': date,
+            'start': start_time,
+            'end': end_time,
+            'start_ms': start_time_ms,
+            'end_ms': end_time_ms
+        }
+
+        if current_time_ms < start_time_ms:
+            future_events.append(event_info)
+        elif current_time_ms < end_time_ms:
+            active_events.append(event_info)
+        else:
+            past_events.append(event_info)
+
+    # Eventos activos
+    if active_events:
+        messages.append("\n*Evento Actual:*")
+        for event in active_events:
+            time_left = get_time_remaining_ms(current_time_ms, event['end_ms'])
+            messages.extend([
+                f"• {event['day']} {event['date']}",
+                f"  Horario: {event['start']} - {event['end']}",
+                f"  **¡EN CURSO!** Termina en: {time_left}"
+            ])
+
+    # Próximos eventos
+    if future_events:
+        messages.append("\n*Próximos Eventos:*")
+        for event in future_events:
+            time_until = get_time_remaining_ms(current_time_ms, event['start_ms'])
+            messages.extend([
+                f"• {event['day']} {event['date']}",
+                f"  Horario: {event['start']} - {event['end']}",
+                f"  Comienza en: {time_until}"
+            ])
+
+    # No mostramos eventos pasados
+    return "\n".join(messages)
+
+def handle_globe_command(chat_id: str, user_data: Dict) -> None:
+    """Maneja el comando /globe para mostrar horarios de Floating Island."""
+    farm_id = user_data.get(chat_id, {}).get('farm_id')
+    if not farm_id:
+        send_telegram_message(chat_id, "❌ Configura tu ID primero con `/setfarm [ID]`")
+        return
+
+    data = fetch_farm_data(farm_id)
+    if not data:
+        send_telegram_message(chat_id, "❌ Error al obtener datos de la granja.")
+        return
+    
+    logger.info(f"[DEBUG] Datos recibidos de la API: {json.dumps(data, indent=2)}")
+    current_time_ms = time.time() * 1000
+    floating_island = data.get("farm", {}).get("floatingIsland", {}).get("schedule", [])
+
+    if not floating_island:
+        send_telegram_message(chat_id, "No hay eventos de Floating Island programados.")
+        return
+
+    message = format_floating_island_message(floating_island, current_time_ms)
+    send_telegram_message(chat_id, message)
+
 def handle_help_command(chat_id: str) -> None:
     """Maneja el comando /help."""
     help_text = (
@@ -808,6 +962,9 @@ def handle_help_command(chat_id: str) -> None:
         "/getfarm - Ver tu granja actual\n"
         "/crops - Ver estado de cultivos\n"
         "/beehive - Ver estado de colmenas\n"
+        "/globe - Ver horarios de Floating Island\n"
+        "/trees - Ver estado de árboles\n"
+        "/stones - Ver estado de piedras\n"
         "/help - Mostrar esta ayuda"
     )
     send_telegram_message(chat_id, help_text)
@@ -875,6 +1032,10 @@ def check_all_farms_status(user_data: Dict) -> None:
         # Procesar piedras
         stone_alerts = process_stones_alerts(data, user_info, current_time_ms)
         notifications.extend(stone_alerts)
+        
+        # Procesar Floating Island
+        floating_island_alerts = process_floating_island_alerts(data, user_info, current_time_ms)
+        notifications.extend(floating_island_alerts)
         
         # Aquí se pueden agregar más procesadores (animales, etc.)
         
